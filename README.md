@@ -13,9 +13,6 @@
   - [3. Branch 2: Discrete Jump Stream (Luồng Nhảy Vọt)](#3-branch-2-discrete-jump-stream-luồng-nhảy-vọt)
   - [4. Adaptive Fusion Layer (Lớp Hợp Nhất)](#4-adaptive-fusion-layer-lớp-hợp-nhất)
 - [Định nghĩa toán học](#định-nghĩa-toán-học)
-- [Hướng dẫn nhanh](#hướng-dẫn-nhanh)
-- [Ghi chú & Tương lai](#ghi-chú--tương-lai)
-- [Bản quyền](#bản-quyền)
 
 ---
 
