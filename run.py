@@ -4,6 +4,8 @@ import torch
 import torch.backends
 from utils.print_args import print_args
 import random
+from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
+from exp.exp_JDKAN import Exp_JDKAN
 import numpy as np
 
 if __name__ == '__main__':
@@ -21,6 +23,9 @@ if __name__ == '__main__':
     parser.add_argument('--model_id', type=str, required=True, default='test', help='model id')
     parser.add_argument('--model', type=str, required=True, default='Autoformer',
                         help='model name, options: [Autoformer, Transformer, TimesNet]')
+
+    # JD-KAN
+    parser.add_argument('--kan_order', type=int, default=3, help='Bậc của đa thức trong rKAN')
 
     # data loader
     parser.add_argument('--data', type=str, required=True, default='ETTh1', help='dataset type')
@@ -174,26 +179,12 @@ if __name__ == '__main__':
 
 
     if args.task_name == 'long_term_forecast':
-        from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
-        Exp = Exp_Long_Term_Forecast
-    elif args.task_name == 'short_term_forecast':
-        from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
-        Exp = Exp_Short_Term_Forecast
-    elif args.task_name == 'imputation':
-        from exp.exp_imputation import Exp_Imputation
-        Exp = Exp_Imputation
-    elif args.task_name == 'anomaly_detection':
-        from exp.exp_anomaly_detection import Exp_Anomaly_Detection
-        Exp = Exp_Anomaly_Detection
-    elif args.task_name == 'classification':
-        from exp.exp_classification import Exp_Classification
-        Exp = Exp_Classification
-    elif args.task_name == 'zero_shot_forecast':
-        from exp.exp_zero_shot_forecasting import Exp_Zero_Shot_Forecast
-        Exp = Exp_Zero_Shot_Forecast
+        if args.model == 'JDKAN':
+            Exp = Exp_JDKAN  # <--- Nếu model là JDKAN thì dùng Exp mới
+        else:
+            Exp = Exp_Long_Term_Forecast
     else:
-        from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
-        Exp = Exp_Long_Term_Forecast
+        Exp = Exp_Long_Term_Forecast # Fallback
 
     if args.is_training:
         for ii in range(args.itr):
