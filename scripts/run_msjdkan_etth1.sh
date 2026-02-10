@@ -28,24 +28,20 @@ python -u run.py \
   --data ETTh1 \
   --features M \
   --seq_len 96 \
-  --label_len 48 \
+  --label_len 0 \
   --pred_len 96 \
-  --e_layers 3 \
+  --e_layers 2 \
   --d_layers 1 \
   --factor 3 \
   --enc_in 7 \
   --dec_in 7 \
   --c_out 7 \
   --des 'Exp_MS_JDKAN_CPU_Test' \
-  --d_model 32 \
-  --d_ff 64 \
+  --d_model 16 \
+  --d_ff 32 \
   --batch_size 32 \
-  --learning_rate 0.001 \
-  --weight_decay 0.01 \
-  --grad_clip 1.0 \
-  --dropout 0.3 \
-  --lradj cosine \
+  --learning_rate 0.01 \
+  --kan_order 4 \
   --no_use_gpu \
-  --train_epochs 100 \
-  --patience 5 \
-  --itr 1
+  --train_epochs 10 \
+  --patience 10
