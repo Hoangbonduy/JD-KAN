@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# --- THAY ĐỔI 1: Tắt GPU ---
-# Đặt giá trị rỗng hoặc -1 để PyTorch không nhìn thấy GPU nào
-export CUDA_VISIBLE_DEVICES=-1
+# --- GPU Configuration ---
+# Enable GPU - comment out to disable GPU
+# export CUDA_VISIBLE_DEVICES=-1
 
 # Lấy đường dẫn gốc
-model_name=JDKAN
+model_name=Model
 
 # Tạo thư mục logs nếu chưa có
 if [ ! -d "./logs" ]; then
@@ -17,7 +17,7 @@ if [ ! -d "./logs/LongForecasting" ]; then
 fi
 
 # Chạy thử nghiệm
-# Lưu ý: Vì chạy CPU nên mình giảm batch_size xuống 16 để đỡ lag máy
+# Lưu ý: Vì chạy CPU nên mình giảm batch_size xuống để đỡ lag máy
 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
@@ -36,13 +36,15 @@ python -u run.py \
   --enc_in 7 \
   --dec_in 7 \
   --c_out 7 \
-  --des 'Exp_JDKAN_CPU_Test' \
-  --d_model 16 \
-  --d_ff 32 \
-  --kan_order 3 \
+  --des 'Exp_Model_CPU_Test' \
+  --d_model 256 \
+  --d_ff 512 \
   --n_fourier_terms 8 \
-  --batch_size 32 \
+  --rkan_order 3 \
+  --dropout 0.1 \
+  --batch_size 64 \
   --learning_rate 0.001 \
-  --no_use_gpu \
+  --use_gpu \
+  --gpu 0 \
   --train_epochs 100 \
   --itr 1

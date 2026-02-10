@@ -45,40 +45,32 @@ class SeriesDecomp(nn.Module):
         res = x - moving_mean
         return res, moving_mean
 
-class CascadedDecomp(nn.Module):
+class MultiScaleDecomp(nn.Module):
     """
-    Phân rã đa tầng (Cascaded Frequency Decomposition - CFD) cho JD-KAN.
-    
-    Quy trình:
-    1. Input -> [Low-pass Filter (Large Kernel)] -> Trend (Low Freq)
-       Phần dư 1 = Input - Trend
-       
-    2. Phần dư 1 -> [Mid-pass Filter (Small Kernel)] -> Seasonality (Mid Freq)
-       Phần dư 2 (Residual) = Phần dư 1 - Seasonality
-       
-    Output cuối cùng:
-    - x_trend: Đi vào rKAN (Low order)
-    - x_season: Đi vào rKAN (Mid order)
-    - x_resid: Đi vào Jump Layer (để phát hiện Spikes)
+    Phân rã đa tỉ lệ:
+    - Kernel nhỏ (3): Bắt nhiễu và sự kiện đột ngột (cho nhánh Jump).
+    - Kernel vừa (13): Bắt tính chu kỳ (cho nhánh Season).
+    - Kernel lớn (33): Bắt xu hướng dài hạn (cho nhánh Trend).
     """
-    def __init__(self, kernel_low=25, kernel_mid=11):
-        super(CascadedDecomp, self).__init__()
-        
-        # Kernel lớn (vd: 25) để bắt xu hướng rất chậm
-        self.decomp_low = SeriesDecomp(kernel_low)
-        
-        # Kernel nhỏ hơn (vd: 11) để bắt các dao động tuần hoàn
-        self.decomp_mid = SeriesDecomp(kernel_mid)
+    def __init__(self, kernel_sizes=[3, 13, 33]):
+        super(MultiScaleDecomp, self).__init__()
+        # Sắp xếp kernel từ nhỏ đến lớn để dễ xử lý
+        self.kernel_sizes = sorted(kernel_sizes)
+        self.decomps = nn.ModuleList([SeriesDecomp(k) for k in self.kernel_sizes])
 
     def forward(self, x):
-        # Bước 1: Tách Trend
-        # x_rest_1 chứa (Season + Noise + Jumps)
-        # x_trend chứa (Trend)
-        x_rest_1, x_trend = self.decomp_low(x)
+        # x: [Batch, Seq_Len, Channels]
         
-        # Bước 2: Tách Season từ phần còn lại
-        # x_resid chứa (Noise + Jumps) -> Đây là "thức ăn" cho Nhánh 2
-        # x_season chứa (Season)
-        x_resid, x_season = self.decomp_mid(x_rest_1)
+        # 1. Lấy Trend từ kernel lớn nhất (mượt nhất)
+        _, trend_feat = self.decomps[-1](x) # Kernel 33
         
-        return x_trend, x_season, x_resid
+        # 2. Lấy Residual tổng thể từ kernel nhỏ nhất (chi tiết nhất)
+        # resid_feat ở đây chứa tất cả những gì kernel 3 không bắt được (tức là dao động cực nhanh)
+        resid_feat, _ = self.decomps[0](x)  # Kernel 3
+        
+        # 3. Tính Season
+        # Season là phần nằm giữa: Không phải Trend dài hạn, cũng không phải nhiễu cực nhanh
+        # Công thức: Season = Original - Trend - Resid
+        season_feat = x - trend_feat - resid_feat
+        
+        return trend_feat, season_feat, resid_feat

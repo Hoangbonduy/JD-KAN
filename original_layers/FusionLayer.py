@@ -86,5 +86,22 @@ class FusionLayer(nn.Module):
         
         # Tổng hợp
         y_final = x_cont_adjusted + (jump_impact * x_jump)
+
+        # --- ĐOẠN DEBUG (CHÈN VÀO ĐÂY) ---
+        # Chỉ in thông tin của batch đầu tiên để đỡ spam màn hình
+        if self.training: 
+            norm_cont = torch.norm(x_cont).item()
+            norm_jump = torch.norm(x_jump).item()
+            ratio = norm_jump / (norm_cont + 1e-6)
+            
+            print(f"\n[FUSION SCOPE]")
+            print(f" - Cont Magnitude (Trend+Season): {norm_cont:.4f}")
+            print(f" - Jump Magnitude (Resid/Shock):  {norm_jump:.4f}")
+            print(f" - Ratio (Jump/Cont):             {ratio:.4f}")
+            
+            if ratio > 0.5:
+                print(" -> CẢNH BÁO: Nhánh Jump đang chiếm tỉ trọng quá lớn!")
+            elif ratio < 0.01:
+                print(" -> CẢNH BÁO: Nhánh Jump quá yếu, gần như chết (Dead Branch).")
         
         return self.dropout(y_final)

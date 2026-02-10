@@ -1,84 +1,82 @@
 import torch
 import torch.nn as nn
 from layers.StandardNorm import Normalize
-from layers.DecompLayer import CascadedDecomp
+from layers.SmoothLayer import SmoothLayer
 from layers.DiffusionLayer import DiffusionLayer
 from layers.JumpLayer import JumpLayer
 from layers.FusionLayer import FusionLayer
 
 class Model(nn.Module):
-    """
-    JD-KAN: Jump-Diffusion Kolmogorov-Arnold Network
-    
-    Mô hình dự báo chuỗi thời gian thế hệ mới, kết hợp:
-    1. Continuous Flow: Sử dụng rKAN (Rational KAN) để ngoại suy xu hướng mượt mà.
-    2. Discrete Jumps: Sử dụng Memory Bank để phát hiện và tái tạo các cú sốc bất ngờ.
-    3. Adaptive Fusion: Cơ chế trộn thông minh giữa hai luồng tín hiệu.
-    """
     def __init__(self, configs):
         super(Model, self).__init__()
+        self.configs = configs
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
         
-        # 1. Normalization (RevIN)
-        # Giúp model học tốt hơn trên dữ liệu non-stationary (biến động phân phối)
-        self.normalize = Normalize(configs.enc_in, affine=True, non_norm=False)
-        
-        # 2. Decomposition
-        # Tách dữ liệu thành các thành phần tần số khác nhau
-        self.decomposition = CascadedDecomp(kernel_low=25, kernel_mid=11)
-        
-        # 3. Branch 1: Continuous Stream (Trend + Season)
-        # Dùng rKAN để học động lực học liên tục
-        # kan_order: Bậc của đa thức (được config truyền vào)
+        # Adaptive Spectral-KAN Decomposer
+        # Phân rã thành x_smooth (Trend + Seasonality) và residual (Noise + Jumps)
+        self.decomposition = SmoothLayer(
+            n_channels=configs.enc_in,
+            seq_len=configs.seq_len,
+            n_fourier_terms=getattr(configs, 'n_fourier_terms', 8),
+            d_model=getattr(configs, 'd_model', 256) // 8,  # Use smaller d_model for SmoothLayer
+            ma_kernel=25
+        )
+
         self.continuous_stream = DiffusionLayer(
             input_dim=configs.enc_in,
             seq_len=configs.seq_len,
             pred_len=configs.pred_len,
-            kan_order=configs.kan_order if hasattr(configs, 'kan_order') else 3
+            kan_order=configs.kan_order
         )
-        
-        # 4. Branch 2: Jump Stream (Residuals -> Events)
-        # Dùng Memory Bank để "nhớ" các mẫu hình shock
-        # n_jumps: Số lượng mẫu trong bộ nhớ (mặc định 32 nếu không config)
+
         self.jump_stream = JumpLayer(
             input_dim=configs.enc_in,
             seq_len=configs.seq_len,
             pred_len=configs.pred_len,
-            n_jumps=32,   # Có thể đưa vào configs nếu cần tuning
-            d_model=64    # Hidden dim cho Gating Network
+            d_model=configs.d_model
         )
-        
-        # 5. Fusion Layer
-        # Hợp nhất hai nhánh
-        self.fusion = FusionLayer(d_model=configs.enc_in, dropout=configs.dropout)
+
+        self.fusion = FusionLayer(configs.enc_in)
+        self.normalize = Normalize(configs.enc_in, affine=True)
 
     def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec):
-        # x_enc: [Batch, Seq_Len, Channels]
-        
-        # --- Bước 1: Chuẩn hóa (Normalization) ---
-        # "seq_last" nghĩa là chuẩn hóa theo chiều thời gian (phổ biến cho Time Series)
         x_norm = self.normalize(x_enc, 'norm')
 
-        # --- Bước 2: Phân rã (Decomposition) ---
-        # Tách x_norm thành 3 phần
-        x_trend, x_season, x_resid = self.decomposition(x_norm)
+        # Phân rã: Smooth (Trend + Seasonality) và Residual (Noise + Jumps)
+        x_smooth, residual = self.decomposition(x_norm)
 
-        # --- Bước 3: Xử lý các nhánh (Processing Branches) ---
+        # Nhánh Continuous học Smooth component
+        future_cont = self.continuous_stream(x_smooth)
         
-        # Nhánh 1: Dự báo phần liên tục (Continuous)
-        # Output: [Batch, Pred_Len, Channels]
-        future_cont = self.continuous_stream(x_trend, x_season)
-        
-        # Nhánh 2: Dự báo phần nhảy vọt (Jumps)
-        # Output: [Batch, Pred_Len, Channels]
-        future_jump = self.jump_stream(x_resid)
+        # Nhánh Jump học Residual component (high-frequency)
+        future_jump = self.jump_stream(residual)
 
-        # --- Bước 4: Hợp nhất (Fusion) ---
-        # Output: [Batch, Pred_Len, Channels]
+        # Debug Fusion Layer
+        if self.training == False: # Chỉ vẽ khi test/valid để không làm chậm train
+             import matplotlib.pyplot as plt
+             import os
+             if not os.path.exists("./debug_fusion"): os.makedirs("./debug_fusion")
+             
+             # Lấy sample đầu tiên, channel cuối cùng (thường khó dự báo nhất)
+             idx = 0
+             chn = -1 
+             
+             pred_cont = future_cont[idx, :, chn].detach().cpu().numpy()
+             pred_jump = future_jump[idx, :, chn].detach().cpu().numpy()
+             combined = (future_cont + future_jump)[idx, :, chn].detach().cpu().numpy()
+             
+             plt.figure(figsize=(10, 6))
+             plt.plot(pred_cont, label='Continuous (Trend+Season)', linewidth=2)
+             plt.plot(pred_jump, label='Jump Stream', color='red', alpha=0.7)
+             plt.plot(combined, label='Fused Result', linestyle='--')
+             plt.title("Fusion Layer Inspection: Components Breakdown")
+             plt.legend()
+             plt.grid(True)
+             plt.savefig(f"./debug_fusion/fusion_step.png")
+             plt.close()
+
         future_final = self.fusion(future_cont, future_jump)
-
-        # --- Bước 5: Trả lại scale gốc (Denormalization) ---
         y_pred = self.normalize(future_final, 'denorm')
-        
+
         return y_pred

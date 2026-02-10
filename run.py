@@ -5,7 +5,7 @@ import torch.backends
 from utils.print_args import print_args
 import random
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
-from exp.exp_JDKAN import Exp_JDKAN
+# from exp.exp_JDKAN import Exp_JDKAN  # Lazy import để tránh lỗi khi không dùng JDKAN
 import numpy as np
 
 if __name__ == '__main__':
@@ -26,6 +26,8 @@ if __name__ == '__main__':
 
     # JD-KAN
     parser.add_argument('--kan_order', type=int, default=3, help='Bậc của đa thức trong rKAN')
+    parser.add_argument('--n_fourier_terms', type=int, default=8, help='Số lượng Fourier terms cho SmoothLayer')
+    parser.add_argument('--rkan_order', type=int, default=3, help='Bậc của rKAN cho DiffusionLayer')
 
     # data loader
     parser.add_argument('--data', type=str, required=True, default='ETTh1', help='dataset type')
@@ -92,6 +94,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
     parser.add_argument('--patience', type=int, default=3, help='early stopping patience')
     parser.add_argument('--learning_rate', type=float, default=0.0001, help='optimizer learning rate')
+    parser.add_argument('--weight_decay', type=float, default=0.0, help='weight decay for AdamW optimizer')
+    parser.add_argument('--grad_clip', type=float, default=0.0, help='gradient clipping max norm (0=disabled)')
     parser.add_argument('--des', type=str, default='test', help='exp description')
     parser.add_argument('--loss', type=str, default='MSE', help='loss function')
     parser.add_argument('--lradj', type=str, default='type1', help='adjust learning rate')
@@ -180,7 +184,8 @@ if __name__ == '__main__':
 
     if args.task_name == 'long_term_forecast':
         if args.model == 'JDKAN':
-            Exp = Exp_JDKAN  # <--- Nếu model là JDKAN thì dùng Exp mới
+            from exp.exp_JDKAN import Exp_JDKAN  # Lazy import
+            Exp = Exp_JDKAN
         else:
             Exp = Exp_Long_Term_Forecast
     else:

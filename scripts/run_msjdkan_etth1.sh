@@ -5,7 +5,7 @@
 export CUDA_VISIBLE_DEVICES=-1
 
 # Lấy đường dẫn gốc
-model_name=JDKAN
+model_name=MS_JDKAN
 
 # Tạo thư mục logs nếu chưa có
 if [ ! -d "./logs" ]; then
@@ -16,8 +16,8 @@ if [ ! -d "./logs/LongForecasting" ]; then
     mkdir ./logs/LongForecasting
 fi
 
-# Chạy thử nghiệm
-# Lưu ý: Vì chạy CPU nên mình giảm batch_size xuống 16 để đỡ lag máy
+# Chạy thử nghiệm MS_JDKAN
+# Anti-overfit: giảm d_model, tăng dropout, thêm weight_decay, gradient clipping, cosine LR
 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
@@ -30,19 +30,22 @@ python -u run.py \
   --seq_len 96 \
   --label_len 48 \
   --pred_len 96 \
-  --e_layers 2 \
+  --e_layers 3 \
   --d_layers 1 \
   --factor 3 \
   --enc_in 7 \
   --dec_in 7 \
   --c_out 7 \
-  --des 'Exp_JDKAN_CPU_Test' \
-  --d_model 16 \
-  --d_ff 32 \
-  --kan_order 3 \
-  --n_fourier_terms 8 \
+  --des 'Exp_MS_JDKAN_CPU_Test' \
+  --d_model 32 \
+  --d_ff 64 \
   --batch_size 32 \
   --learning_rate 0.001 \
+  --weight_decay 0.01 \
+  --grad_clip 1.0 \
+  --dropout 0.3 \
+  --lradj cosine \
   --no_use_gpu \
   --train_epochs 100 \
+  --patience 5 \
   --itr 1
