@@ -5,6 +5,7 @@ from utils.metrics import metric
 import torch
 import torch.nn as nn
 from torch import optim
+from torch.optim import lr_scheduler
 import os
 import time
 import warnings
@@ -31,11 +32,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        wd = getattr(self.args, 'weight_decay', 0.0)
-        if wd > 0:
-            model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate, weight_decay=wd)
-        else:
-            model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
 
     def _select_criterion(self):
@@ -93,6 +90,12 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
+        
+        scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
+                                            steps_per_epoch=train_steps,
+                                            pct_start=self.args.pct_start,
+                                            epochs=self.args.train_epochs,
+                                            max_lr=self.args.learning_rate)
 
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
@@ -144,16 +147,15 @@ class Exp_Long_Term_Forecast(Exp_Basic):
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
-                    if getattr(self.args, 'grad_clip', 0) > 0:
-                        scaler.unscale_(model_optim)
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.grad_clip)
                     scaler.step(model_optim)
                     scaler.update()
                 else:
                     loss.backward()
-                    if getattr(self.args, 'grad_clip', 0) > 0:
-                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.grad_clip)
                     model_optim.step()
+                
+                # Step scheduler after each batch for OneCycleLR
+                if self.args.lradj == 'TST':
+                    scheduler.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
@@ -167,7 +169,7 @@ class Exp_Long_Term_Forecast(Exp_Basic):
                 print("Early stopping")
                 break
 
-            adjust_learning_rate(model_optim, epoch + 1, self.args)
+            adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args)
 
         best_model_path = path + '/' + 'checkpoint.pth'
         self.model.load_state_dict(torch.load(best_model_path))

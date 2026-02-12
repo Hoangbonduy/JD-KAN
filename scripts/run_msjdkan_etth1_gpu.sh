@@ -1,9 +1,3 @@
-#!/bin/bash
-
-# --- THAY ĐỔI 1: Tắt GPU ---
-# Đặt giá trị rỗng hoặc -1 để PyTorch không nhìn thấy GPU nào
-export CUDA_VISIBLE_DEVICES=-1
-
 # Lấy đường dẫn gốc
 model_name=MS_JDKAN
 
@@ -47,11 +41,10 @@ python -u run.py \
   --down_sampling_layers 2 \
   --down_sampling_window 2 \
   --kan_order 3 \
-  --batch_size 128 \
-  --learning_rate 0.005 \
-  --train_epochs 50 \
+  --batch_size 64 \
+  --learning_rate 0.001 \
+  --train_epochs 100 \
   --patience 10 \
-  --lradj 'TST' \
+  --lradj 'type3' \
   --pct_start 0.2 \
-  --no_use_gpu \
   --des Exp_MS_JDKAN_v3
