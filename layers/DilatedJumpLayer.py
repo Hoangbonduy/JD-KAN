@@ -1,82 +1,88 @@
 import torch
 import torch.nn as nn
-from layers.rKAN import rKANBlock
-import torch.fft  # Thêm import này
+from layers.AdaptiveWaveletKAN import AdaptiveWaveletKANBlock
+import torch.fft
 
 class DilatedJumpLayer(nn.Module):
-    def __init__(self, d_model, kernel_size=3, dilations=[1, 2, 4, 8],  # Giảm dilations để tránh over-smooth
-                 kan_order=3, dropout=0.1, iterations=2):  # Thêm iterations
+    def __init__(self, d_model, seq_len, kernel_size=3, dilations=[1, 2, 4, 8],
+                 kan_order=3, dropout=0.1, iterations=2, wavelet_type='mexican_hat'): # Thêm wavelet_type
         super().__init__()
         self.dilations = dilations
         self.iterations = iterations
         
-        # Conv cho smooth stream (giữ nguyên nhưng padding 'replicate' tốt rồi)
+        # Conv cho smooth stream (giữ nguyên)
         self.convs = nn.ModuleList([
             nn.Conv1d(d_model, d_model, kernel_size=kernel_size, 
-                      dilation=d, padding=(kernel_size-1)*d // 2,  # Causal padding symmetric
+                      dilation=d, padding=(kernel_size-1)*d // 2,
                       padding_mode='replicate') 
             for d in dilations
         ])
         
-        # Fusion layer giữ nguyên
         self.fusion_layer = nn.Conv1d(d_model * len(dilations), d_model, kernel_size=1)
-        
-        # Thêm refine_conv cho iterative residuals (conv nhẹ để refine spike)
         self.refine_conv = nn.Conv1d(d_model, d_model, kernel_size=3, padding=1)
         
-        # rKAN giữ nguyên
-        self.rkan = rKANBlock(d_model, d_model, kan_order=kan_order, dropout=dropout)
+        # --- THAY THẾ: rKAN bằng WaveletKANBlock ---
+        # Theo báo cáo: Wavelet KAN xử lý tốt các đột biến (spikes) mà Jacobi thất bại [cite: 180]
+        self.wav_kan = AdaptiveWaveletKANBlock(
+            d_model, d_model, 
+            seq_len=seq_len,  # Quan trọng
+            dropout=dropout,
+            num_wavelets=4    # K=4 như trong ảnh minh họa
+        )
         
-        # Norm & Act
         self.norm = nn.LayerNorm(d_model)
         self.act = nn.GELU()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        residual = x  # [B, L, C]
+        residual = x
         x_in = x.permute(0, 2, 1)  # [B, C, L]
         seq_len = x_in.size(2)
         
-        # --- THÊM: Seasonal Decomposition (FFT-based) ---
-        # Tách low-freq (trend + seasonal) vào smooth, high-freq vào spike init
+        # --- Seasonal Decomposition (FFT-based) ---
         fft_x = torch.fft.rfft(x_in, dim=2)
-        freq_cutoff = seq_len // 10  # Cutoff empirical, adjust dựa data (e.g., 1/10 freq cho seasonal)
+        freq_cutoff = seq_len // 10 
         low_freq = torch.zeros_like(fft_x)
         low_freq[:, :, :freq_cutoff] = fft_x[:, :, :freq_cutoff]
         x_seasonal = torch.fft.irfft(low_freq, dim=2)[:, :, :seq_len]
-        x_high_freq = x_in - x_seasonal  # High-freq init cho spike
+        x_high_freq = x_in - x_seasonal
         
         # --- Iterative Decomposition ---
-        x_smooth = x_seasonal  # Init smooth với seasonal
+        x_smooth = x_seasonal
         x_spike = x_high_freq
         
         for _ in range(self.iterations):
-            # Smooth stream: Multi-dilated convs trên current x_smooth
             jump_outputs = []
             for conv in self.convs:
                 out = conv(x_smooth)
-                out = out[:, :, :seq_len]  # Trim
+                out = out[:, :, :seq_len]
                 out = self.act(out)
                 out = self.dropout(out)
                 jump_outputs.append(out)
             
             x_concat = torch.cat(jump_outputs, dim=1)
-            x_smooth = self.fusion_layer(x_concat)  # Update smooth
+            x_smooth = self.fusion_layer(x_concat)
             
-            # Update spike: Original - smooth, rồi refine bằng conv nhẹ
             x_spike = x_in - x_smooth
-            x_spike = self.refine_conv(x_spike)  # Refine residuals
+            x_spike = self.refine_conv(x_spike)
             
         # --- Dual-Input Learning ---
-        x_smooth_t = x_smooth.permute(0, 2, 1)
-        x_spike_t = x_spike.permute(0, 2, 1)
+        x_smooth_t = x_smooth.permute(0, 2, 1) # [B, L, C]
+        x_spike_t = x_spike.permute(0, 2, 1)   # [B, L, C]
         
-        base_out = self.rkan.forward_base(x_smooth_t)
-        kan_out = self.rkan.forward_kan(x_spike_t)
+        # Sử dụng WaveletKANBlock
+        # Nhánh Base học trên phần Smooth (Low frequency)
+        base_out = self.wav_kan.forward_base(x_smooth_t)
         
-        x_out = base_out + kan_out
+        # Nhánh KAN (Wavelet) học trên phần Spike (High frequency)
+        # Wavelet rất nhạy với các biến động nhanh trong x_spike_t [cite: 146, 147]
+        kan_out = self.wav_kan.forward_kan(x_spike_t)
         
-        # Residual + Norm
+        # Mix kết quả
+        # Lưu ý: Báo cáo gợi ý dùng Concatenation thay vì phép cộng (base + kan) nếu được
+        # Nhưng để giữ nguyên kích thước tensor, ta dùng cơ chế mix có sẵn của block
+        x_out = self.wav_kan._mix(base_out, kan_out)
+        
         x_out = self.norm(x_out + residual)
         
         return x_out

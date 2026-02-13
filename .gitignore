@@ -138,7 +138,6 @@ dmypy.json
 /tv_result.xlsx
 /test.py
 /m4_results/
-/test_results/
 /PatchTST_results.xlsx
 /seq_len_long_term_forecast/
 /progress.xlsx

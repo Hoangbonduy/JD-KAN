@@ -41,10 +41,11 @@ python -u run.py \
   --down_sampling_layers 2 \
   --down_sampling_window 2 \
   --kan_order 3 \
-  --batch_size 64 \
+  --batch_size 32 \
   --learning_rate 0.001 \
   --train_epochs 100 \
   --patience 10 \
   --lradj 'type3' \
-  --pct_start 0.2 \
-  --des Exp_MS_JDKAN_v3
+  --pct_start 0.3 \
+  --lambda_f 0.1 \
+  --des Exp_MS_JDKAN_v4

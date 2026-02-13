@@ -47,11 +47,12 @@ python -u run.py \
   --down_sampling_layers 2 \
   --down_sampling_window 2 \
   --kan_order 3 \
-  --batch_size 128 \
-  --learning_rate 0.005 \
-  --train_epochs 50 \
+  --batch_size 32 \
+  --learning_rate 0.001 \
+  --train_epochs 100 \
   --patience 10 \
-  --lradj 'TST' \
-  --pct_start 0.2 \
+  --lradj 'type3' \
+  --pct_start 0.3 \
+  --lambda_f 0.1 \
   --no_use_gpu \
-  --des Exp_MS_JDKAN_v3
+  --des Exp_MS_JDKAN_v4
